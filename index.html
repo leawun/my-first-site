@@ -351,6 +351,30 @@
     .gb-status { min-height: 1.5em; font-size: 0.92rem; color: var(--ink-soft); }
     .gb-status.error { color: var(--primary-deep); }
 
+    .gb-side { display: grid; gap: 20px; }
+    .gb-ai {
+      background: linear-gradient(135deg, var(--blush), #ffe9c7);
+      border-radius: 22px;
+      padding: 20px 22px;
+      display: grid;
+      gap: 14px;
+      justify-items: start;
+    }
+    .gb-ai .btn { border: 2px solid var(--primary); cursor: pointer; font: inherit; font-weight: 700; padding: 10px 22px; }
+    .gb-ai .btn:disabled { opacity: 0.6; cursor: wait; }
+    .gb-ai-result {
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.7);
+      border-radius: 14px;
+      padding: 12px 16px;
+      width: 100%;
+      animation: pop 0.4s ease;
+    }
+    .gb-ai-result.error { color: var(--primary-deep); }
+    .gb-ai-result small { display: block; margin-top: 4px; color: var(--ink-soft); font-size: 0.82rem; }
+
     .gb-list { list-style: none; display: grid; gap: 14px; }
     .gb-item {
       background: var(--bg);
@@ -524,9 +548,15 @@
           <button type="submit" class="btn primary">送出留言 ✍</button>
           <p class="gb-status" id="gb-status" role="status"></p>
         </form>
-        <ul class="gb-list" id="gb-list" aria-live="polite">
-          <li class="gb-empty">留言載入中…</li>
-        </ul>
+        <div class="gb-side">
+          <div class="gb-ai reveal">
+            <button type="button" class="btn ghost" id="gb-ai-btn">✨ AI 一句話總結</button>
+            <p class="gb-ai-result" id="gb-ai-result" role="status" hidden></p>
+          </div>
+          <ul class="gb-list" id="gb-list" aria-live="polite">
+            <li class="gb-empty">留言載入中…</li>
+          </ul>
+        </div>
       </div>
     </div>
   </section>
@@ -648,6 +678,36 @@
     });
 
     loadMessages();
+
+    // ---------- AI summary ----------
+    const aiBtn = document.getElementById('gb-ai-btn');
+    const aiResult = document.getElementById('gb-ai-result');
+
+    function showSummary(text, note = '', isError = false) {
+      aiResult.hidden = false;
+      aiResult.classList.toggle('error', isError);
+      aiResult.textContent = text;
+      if (note) {
+        const small = document.createElement('small');
+        small.textContent = note;
+        aiResult.append(small);
+      }
+    }
+
+    aiBtn.addEventListener('click', async () => {
+      aiBtn.disabled = true;
+      showSummary('AI 正在閱讀所有留言…');
+      try {
+        const res = await fetch('/api/summary', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || '總結失敗，請稍後再試');
+        showSummary(data.summary, data.count ? `根據 ${data.count} 則留言，由 Claude 產生` : '');
+      } catch (err) {
+        showSummary(err.message || '總結失敗，請稍後再試', '', true);
+      } finally {
+        aiBtn.disabled = false;
+      }
+    });
   </script>
 </body>
 </html>

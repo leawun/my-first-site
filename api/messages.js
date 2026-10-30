@@ -1,27 +1,11 @@
-import { neon } from '@neondatabase/serverless';
-
-const sql = neon(process.env.DATABASE_URL);
+import { sql, ensureTables } from '../lib/db.js';
 
 const NAME_MAX = 30;
 const MESSAGE_MAX = 200;
 
-// 第一次被呼叫時建立資料表，之後同一個執行個體就不再重複執行
-let ready;
-function ensureTable() {
-  ready ??= sql`
-    CREATE TABLE IF NOT EXISTS guestbook (
-      id         SERIAL PRIMARY KEY,
-      name       VARCHAR(30) NOT NULL,
-      message    VARCHAR(200) NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.catch((err) => { ready = undefined; throw err; });
-  return ready;
-}
-
 export default async function handler(req, res) {
   try {
-    await ensureTable();
+    await ensureTables();
 
     if (req.method === 'GET') {
       const rows = await sql`
