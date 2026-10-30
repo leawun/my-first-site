@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { sql, ensureTables } from '../lib/db.js';
+import { matchKeywords, notifyKeywordMessage } from '../lib/notify.js';
 
 const NAME_MAX = 30;
 const MESSAGE_MAX = 200;
@@ -54,6 +55,8 @@ export default async function handler(req, res) {
         VALUES (${name}, ${message}, ${hashToken(editToken)})
         RETURNING id, name, message, created_at, updated_at
       `;
+      const keywords = matchKeywords(message);
+      if (keywords.length) await notifyKeywordMessage({ name, message, keywords });
       return res.status(201).json({ ...row, editToken });
     }
 
@@ -81,6 +84,10 @@ export default async function handler(req, res) {
       }
       // 內容變了，讓下一次 AI 總結重新產生
       await sql`DELETE FROM guestbook_summary`;
+      const keywords = matchKeywords(message);
+      if (keywords.length) {
+        await notifyKeywordMessage({ name: row.name, message, keywords, edited: true });
+      }
       return res.status(200).json(row);
     }
 
