@@ -312,6 +312,73 @@
       font-size: 0.92rem;
     }
 
+    /* ---------- Guestbook ---------- */
+    .guestbook { background: var(--surface); }
+    .gb-wrap {
+      display: grid;
+      grid-template-columns: 1fr 1.3fr;
+      gap: 32px;
+      align-items: start;
+    }
+    .gb-form {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 28px;
+      display: grid;
+      gap: 16px;
+      position: sticky;
+      top: 88px;
+    }
+    .gb-form label { font-weight: 700; font-size: 0.95rem; display: grid; gap: 6px; }
+    .gb-form input,
+    .gb-form textarea {
+      font: inherit;
+      color: var(--ink);
+      background: var(--surface);
+      border: 2px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      transition: border-color 0.2s;
+      resize: vertical;
+    }
+    .gb-form input:focus,
+    .gb-form textarea:focus { outline: none; border-color: var(--primary); }
+    .gb-form .hp { position: absolute; left: -9999px; }
+    .gb-form .count { font-weight: 400; color: var(--ink-soft); font-size: 0.82rem; justify-self: end; }
+    .gb-form button { border: 0; cursor: pointer; justify-content: center; font: inherit; font-weight: 700; }
+    .gb-form button:disabled { opacity: 0.6; cursor: wait; transform: none; }
+    .gb-status { min-height: 1.5em; font-size: 0.92rem; color: var(--ink-soft); }
+    .gb-status.error { color: var(--primary-deep); }
+
+    .gb-list { list-style: none; display: grid; gap: 14px; }
+    .gb-item {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px 20px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 14px;
+      animation: pop 0.4s ease;
+    }
+    .gb-item .initial {
+      grid-row: span 2;
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+    }
+    .gb-item .meta { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+    .gb-item .who { font-weight: 700; }
+    .gb-item time { font-size: 0.82rem; color: var(--ink-soft); }
+    .gb-item .text { color: var(--ink-soft); overflow-wrap: anywhere; white-space: pre-wrap; }
+    .gb-empty { text-align: center; color: var(--ink-soft); padding: 32px 0; }
+    @keyframes pop { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
     /* ---------- Contact ---------- */
     .contact { text-align: center; }
     .contact p { color: var(--ink-soft); margin-bottom: 28px; font-size: 1.08rem; }
@@ -340,6 +407,8 @@
       .float-badge.b { right: -6%; }
       .cards { grid-template-columns: 1fr; }
       .hobby-box { padding: 48px 24px; }
+      .gb-wrap { grid-template-columns: 1fr; }
+      .gb-form { position: static; }
     }
     @media (max-width: 520px) {
       nav ul { gap: 16px; font-size: 0.88rem; }
@@ -358,6 +427,7 @@
       <ul>
         <li><a href="#about">關於我</a></li>
         <li><a href="#hobby">興趣</a></li>
+        <li><a href="#guestbook">留言板</a></li>
         <li><a href="#contact">聯絡</a></li>
       </ul>
     </div>
@@ -433,6 +503,34 @@
     </div>
   </section>
 
+  <section id="guestbook" class="guestbook">
+    <div class="container">
+      <div class="section-head reveal">
+        <small>GUESTBOOK</small>
+        <h2>訪客留言板</h2>
+      </div>
+      <div class="gb-wrap">
+        <form class="gb-form reveal" id="gb-form" novalidate>
+          <label>
+            你的名字
+            <input name="name" maxlength="30" required autocomplete="nickname" placeholder="例如：小明">
+          </label>
+          <label>
+            想說的話
+            <textarea name="message" rows="3" maxlength="200" required placeholder="留下一句話給我吧！"></textarea>
+            <span class="count" id="gb-count">0 / 200</span>
+          </label>
+          <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+          <button type="submit" class="btn primary">送出留言 ✍</button>
+          <p class="gb-status" id="gb-status" role="status"></p>
+        </form>
+        <ul class="gb-list" id="gb-list" aria-live="polite">
+          <li class="gb-empty">留言載入中…</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
   <section id="contact" class="contact">
     <div class="container reveal">
       <div class="section-head">
@@ -458,6 +556,98 @@
       });
     }, { threshold: 0.15 });
     document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+
+    // ---------- Guestbook ----------
+    const gbForm = document.getElementById('gb-form');
+    const gbList = document.getElementById('gb-list');
+    const gbStatus = document.getElementById('gb-status');
+    const gbCount = document.getElementById('gb-count');
+    const gbName = gbForm.querySelector('[name="name"]');
+    const gbMessage = gbForm.querySelector('[name="message"]');
+    const gbHoneypot = gbForm.querySelector('[name="website"]');
+    const timeFmt = new Intl.DateTimeFormat('zh-TW', { dateStyle: 'medium', timeStyle: 'short' });
+
+    function setStatus(text, isError = false) {
+      gbStatus.textContent = text;
+      gbStatus.classList.toggle('error', isError);
+    }
+
+    // 一律用 textContent 放入使用者內容，避免 XSS
+    function renderItem({ name, message, created_at }) {
+      const li = document.createElement('li');
+      li.className = 'gb-item';
+      const initial = document.createElement('span');
+      initial.className = 'initial';
+      initial.textContent = Array.from(name)[0] || '?';
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      const who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = name;
+      const time = document.createElement('time');
+      time.dateTime = created_at;
+      time.textContent = timeFmt.format(new Date(created_at));
+      meta.append(who, time);
+      const text = document.createElement('p');
+      text.className = 'text';
+      text.textContent = message;
+      li.append(initial, meta, text);
+      return li;
+    }
+
+    function showEmpty(text) {
+      const li = document.createElement('li');
+      li.className = 'gb-empty';
+      li.textContent = text;
+      gbList.replaceChildren(li);
+    }
+
+    async function loadMessages() {
+      try {
+        const res = await fetch('/api/messages');
+        if (!res.ok) throw new Error(res.status);
+        const rows = await res.json();
+        if (rows.length === 0) return showEmpty('還沒有人留言，來當第一個吧！');
+        gbList.replaceChildren(...rows.map(renderItem));
+      } catch {
+        showEmpty('留言板暫時無法載入，請稍後再試。');
+      }
+    }
+
+    gbMessage.addEventListener('input', () => {
+      gbCount.textContent = `${gbMessage.value.length} / 200`;
+    });
+
+    gbForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = gbName.value.trim();
+      const message = gbMessage.value.trim();
+      if (!name) return setStatus('請填寫名字', true);
+      if (!message) return setStatus('請寫下想說的話', true);
+
+      const btn = gbForm.querySelector('button');
+      btn.disabled = true;
+      setStatus('送出中…');
+      try {
+        const res = await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, message, website: gbHoneypot.value }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || '送出失敗，請稍後再試');
+        gbMessage.value = '';
+        gbCount.textContent = '0 / 200';
+        setStatus('謝謝你的留言！');
+        await loadMessages();
+      } catch (err) {
+        setStatus(err.message || '送出失敗，請稍後再試', true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    loadMessages();
   </script>
 </body>
 </html>
